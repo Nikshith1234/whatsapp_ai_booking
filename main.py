@@ -1,3 +1,6 @@
+import os
+if not os.path.exists('logs'):
+    os.makedirs('logs')
 """
 Room Booking AI Agent — main.py
 Denisson's Beach Resort | booking.heykoala.ai
