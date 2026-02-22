@@ -1,0 +1,6 @@
+google-generativeai
+flask
+httpx
+python-dotenv
+twilio
+playwright
