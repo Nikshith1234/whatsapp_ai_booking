@@ -135,17 +135,11 @@ def process_booking_request(message: str) -> str:
 # ── Send WhatsApp ──────────────────────────────────
 def send_whatsapp(to: str, message: str):
     try:
-        # Ensure the From number is formatted as a WhatsApp sender
-        sender = TWILIO_NUMBER
-        if not sender.startswith("whatsapp:"):
-            sender = f"whatsapp:{sender}"
-
         twilio_client.messages.create(
             body=message,
-            from_=sender,
+            from_=TWILIO_NUMBER,
             to=to
         )
-
         log.info(f"WhatsApp sent to {to}")
     except Exception as e:
         log.error(f"Failed to send WhatsApp: {e}")
@@ -156,3 +150,17 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     log.info(f"Starting server on port {port}...")
     app.run(host="0.0.0.0", port=port, debug=False)
+
+
+# ── Gemini Test Endpoint ───────────────────────────
+@app.route('/test-gemini', methods=['GET'])
+def test_gemini():
+    try:
+        from ai_extractor import extract_booking_details
+        result = extract_booking_details(
+            "Book a Deluxe Room for John Silva, john@gmail.com, "
+            "check-in March 10 2026, check-out March 15 2026, 2 adults"
+        )
+        return {"status": "success", "extracted": result}, 200
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
