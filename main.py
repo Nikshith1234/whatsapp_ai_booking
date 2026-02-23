@@ -158,9 +158,12 @@ def process_booking_request(message: str) -> str:
 # ── Send WhatsApp ──────────────────────────────────
 def send_whatsapp(to: str, message: str):
     try:
-        sender = TWILIO_NUMBER
+        sender = str(TWILIO_NUMBER).strip()
         if not sender.startswith("whatsapp:"):
             sender = f"whatsapp:{sender}"
+        to = to.strip()
+
+        log.info(f"Sending Twilio Whatsapp -> From: '{sender}' To: '{to}'")
 
         twilio_client.messages.create(
             body=message,
