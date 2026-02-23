@@ -133,7 +133,6 @@ def process_booking_request(message: str) -> str:
 
 
 # ── Send WhatsApp ──────────────────────────────────
-# ── Send WhatsApp ──────────────────────────────────
 def send_whatsapp(to: str, message: str):
     try:
         # Ensure the From number is formatted as a WhatsApp sender
