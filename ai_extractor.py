@@ -1,22 +1,21 @@
 """
 ai_extractor.py
-Uses Gemini 1.5 Flash (free) to extract structured booking details
-from any natural language WhatsApp message.
+Calls Gemini 1.5 Flash directly via HTTP requests.
+No special google package needed — works everywhere.
 """
 
 import os
 import json
 import re
 import logging
-import google.generativeai as genai
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
 log = logging.getLogger(__name__)
 
-# ── Configure Gemini ───────────────────────────────
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-1.5-flash')
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
 
 EXTRACTION_PROMPT = """
 You are a hotel booking assistant for Denisson's Beach Resort.
@@ -49,33 +48,38 @@ Rules:
 
 
 def extract_booking_details(message: str) -> dict:
-    """Send message to Gemini and extract structured booking data."""
+    """Call Gemini API directly via HTTP and extract booking data."""
     log.info("Sending to Gemini for extraction...")
 
-    try:
-        response = model.generate_content(
-            EXTRACTION_PROMPT.format(message=message)
-        )
+    payload = {
+        "contents": [{
+            "parts": [{
+                "text": EXTRACTION_PROMPT.format(message=message)
+            }]
+        }]
+    }
 
-        raw = response.text.strip()
-        log.info(f"Gemini response: {raw}")
+    response = requests.post(
+        GEMINI_URL,
+        headers={"Content-Type": "application/json"},
+        json=payload,
+        timeout=30
+    )
 
-        # Strip any markdown fences
-        raw = re.sub(r'```json|```', '', raw).strip()
+    if response.status_code != 200:
+        raise Exception(f"Gemini API error [{response.status_code}]: {response.text}")
 
-        # Extract JSON safely
-        match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if not match:
-            raise ValueError("No JSON found in Gemini response")
+    raw = response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    log.info(f"Gemini response: {raw}")
 
-        data = json.loads(match.group())
-        log.info(f"Extracted: {data}")
-        return data
+    # Strip markdown fences if present
+    raw = re.sub(r'```json|```', '', raw).strip()
 
-    except json.JSONDecodeError as e:
-        log.error(f"JSON parse error: {e}")
-        raise ValueError(f"Gemini returned invalid JSON: {e}")
+    # Extract JSON safely
+    match = re.search(r'\{.*\}', raw, re.DOTALL)
+    if not match:
+        raise ValueError("No JSON found in Gemini response")
 
-    except Exception as e:
-        log.error(f"Gemini extraction failed: {e}")
-        raise
+    data = json.loads(match.group())
+    log.info(f"Extracted: {data}")
+    return data
