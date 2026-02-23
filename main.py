@@ -1,12 +1,6 @@
-import os
-if not os.path.exists('logs'):
-    os.makedirs('logs')
 """
 Room Booking AI Agent — main.py
 Denisson's Beach Resort | booking.heykoala.ai
-Trigger: WhatsApp (Twilio)
-AI: Gemini 1.5 Flash (free)
-Booking: Direct HTTP API
 """
 
 import os
@@ -22,6 +16,7 @@ from booking import create_booking
 load_dotenv()
 
 # ── Logging ────────────────────────────────────────
+os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -37,27 +32,33 @@ twilio_client = Client(
     os.getenv("TWILIO_ACCOUNT_SID"),
     os.getenv("TWILIO_AUTH_TOKEN")
 )
-TWILIO_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")  # whatsapp:+14155238886
+TWILIO_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
 
 # ── Flask App ──────────────────────────────────────
 app = Flask(__name__)
+
+
+# ── Health Check ───────────────────────────────────
+@app.route('/', methods=['GET'])
+def health():
+    return {"status": "running"}, 200
 
 
 # ── WhatsApp Webhook ───────────────────────────────
 @app.route('/webhook/whatsapp', methods=['POST'])
 def whatsapp_webhook():
     incoming_msg = request.values.get('Body', '').strip()
-    sender       = request.values.get('From', '')  # whatsapp:+91xxxxxxxxxx
+    sender       = request.values.get('From', '')
 
     log.info(f"Message from {sender}: {incoming_msg}")
 
-    # Send instant acknowledgement while processing
+    # Send instant acknowledgement
     send_whatsapp(sender, "Processing your booking request, please wait...")
 
     # Process and get reply
     reply = process_booking_request(incoming_msg)
 
-    # Send final success or failure reply
+    # Send final reply
     send_whatsapp(sender, reply)
 
     return Response("<Response></Response>", mimetype='text/xml')
@@ -66,7 +67,7 @@ def whatsapp_webhook():
 # ── Core Booking Logic ─────────────────────────────
 def process_booking_request(message: str) -> str:
 
-    # Step 1: Extract booking details with Gemini
+    # Step 1: Extract with Gemini
     try:
         details = extract_booking_details(message)
         log.info(f"Extracted: {json.dumps(details, indent=2)}")
@@ -76,12 +77,12 @@ def process_booking_request(message: str) -> str:
             "Booking Failed\n\n"
             "Sorry, I could not understand your booking request.\n\n"
             "Please try again with this format:\n"
-            "Hi, I'd like to book a Deluxe room. "
+            "Hi, I'd like to book a Deluxe Room. "
             "My name is John Silva, email john@gmail.com. "
-            "Check-in March 10, check-out March 15. 2 adults."
+            "Check-in March 10 2026, check-out March 15 2026. 2 adults."
         )
 
-    # Step 2: Check required fields are present
+    # Step 2: Check required fields
     required = {
         "guest_name": "your full name",
         "email":      "your email address",
@@ -96,12 +97,11 @@ def process_booking_request(message: str) -> str:
         missing_list = "\n".join(f"  - {m}" for m in missing)
         return (
             f"Booking Incomplete\n\n"
-            f"I could not find the following details:\n"
-            f"{missing_list}\n\n"
-            f"Please resend your message including all the above. Thank you!"
+            f"I could not find:\n{missing_list}\n\n"
+            f"Please resend with all details. Thank you!"
         )
 
-    # Step 3: Create the booking via hotel API
+    # Step 3: Create booking
     try:
         result = create_booking(details)
         log.info(f"Booking success: {result}")
@@ -117,7 +117,7 @@ def process_booking_request(message: str) -> str:
             f"Adults:    {details['adults']}\n"
             f"Children:  {details.get('children', 0)}\n"
             f"---------------------------\n"
-            f"A confirmation email has been sent to {details['email']}.\n\n"
+            f"Confirmation sent to {details['email']}.\n\n"
             f"We look forward to welcoming you!"
         )
 
@@ -125,14 +125,14 @@ def process_booking_request(message: str) -> str:
         log.error(f"Booking API failed: {e}")
         return (
             f"Booking Failed\n\n"
-            f"Sorry {details.get('guest_name', 'there')}, we could not complete your booking right now.\n\n"
-            f"Please try again in a few minutes or contact us directly:\n"
+            f"Sorry {details.get('guest_name', 'there')}, we could not complete your booking.\n\n"
+            f"Please try again or contact us:\n"
             f"Phone: +1 (555) 123-4567\n"
             f"Email: reservations@denissonsbeach.com"
         )
 
 
-# ── Send WhatsApp Message ──────────────────────────
+# ── Send WhatsApp ──────────────────────────────────
 def send_whatsapp(to: str, message: str):
     try:
         twilio_client.messages.create(
@@ -142,27 +142,11 @@ def send_whatsapp(to: str, message: str):
         )
         log.info(f"WhatsApp sent to {to}")
     except Exception as e:
-        log.error(f"Failed to send WhatsApp to {to}: {e}")
+        log.error(f"Failed to send WhatsApp: {e}")
 
 
-# ── Local Test ─────────────────────────────────────
-def test_locally():
-    tests = [
-        "Hi, book a Deluxe room for John Silva (john@gmail.com). Check-in March 10 2025, check-out March 15 2025. 2 adults 1 child.",
-        "I want a Standard room. Check-in April 1, check-out April 5. 2 adults.",
-        "hello can you help me",
-    ]
-    for i, msg in enumerate(tests, 1):
-        print(f"\n{'='*55}\nTEST {i}: {msg[:60]}...\n{'='*55}")
-        reply = process_booking_request(msg)
-        print(reply)
-
-
+# ── Run ────────────────────────────────────────────
 if __name__ == '__main__':
-    import sys
-    if len(sys.argv) > 1 and sys.argv[1] == 'test':
-        test_locally()
-    else:
-        log.info("Starting server on port 5000...")
-        port = int(os.environ.get("PORT", 5000))
-        app.run(host="0.0.0.0", port=port, debug=False)
+    port = int(os.environ.get("PORT", 5000))
+    log.info(f"Starting server on port {port}...")
+    app.run(host="0.0.0.0", port=port, debug=False)
