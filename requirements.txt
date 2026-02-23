@@ -3,4 +3,3 @@ flask
 httpx
 python-dotenv
 twilio
-playwright

@@ -1,14 +1,14 @@
 """
 ai_extractor.py
 Uses Gemini 1.5 Flash (free) to extract structured booking details
-from any natural language message (WhatsApp, email, etc.)
+from any natural language WhatsApp message.
 """
 
 import os
 import json
 import re
 import logging
-from google import genai
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -40,19 +40,16 @@ Return this exact JSON structure:
 }}
 
 Rules:
-- Convert dates like "March 10 2025" → "2025-03-10"
+- Convert dates like "March 10 2025" to "2025-03-10"
 - If adults not mentioned, default to 1
 - If children not mentioned, default to 0
-- room_type options: Standard, Deluxe, Suite, Ocean View, Family Room
+- room_type options: Premium Suite, Deluxe Room, Executive Room, Family Suite, Deluxe Sea View Room, Presidential Suite
 - Return ONLY the JSON object, nothing else
 """
 
 
 def extract_booking_details(message: str) -> dict:
-    """
-    Send message to Gemini and extract structured booking data.
-    Returns a dict with booking fields.
-    """
+    """Send message to Gemini and extract structured booking data."""
     log.info("Sending to Gemini for extraction...")
 
     try:
@@ -61,42 +58,24 @@ def extract_booking_details(message: str) -> dict:
         )
 
         raw = response.text.strip()
-        log.info(f"Gemini raw response: {raw}")
+        log.info(f"Gemini response: {raw}")
 
-        # Strip any markdown fences Gemini might add
+        # Strip any markdown fences
         raw = re.sub(r'```json|```', '', raw).strip()
 
-        # Extract JSON object using regex (safety net)
+        # Extract JSON safely
         match = re.search(r'\{.*\}', raw, re.DOTALL)
         if not match:
-            raise ValueError("No JSON object found in Gemini response")
+            raise ValueError("No JSON found in Gemini response")
 
         data = json.loads(match.group())
-        log.info(f"Parsed booking data: {data}")
+        log.info(f"Extracted: {data}")
         return data
 
     except json.JSONDecodeError as e:
-        log.error(f"JSON parse error: {e} | Raw: {raw}")
+        log.error(f"JSON parse error: {e}")
         raise ValueError(f"Gemini returned invalid JSON: {e}")
 
     except Exception as e:
         log.error(f"Gemini extraction failed: {e}")
         raise
-
-
-def test_extraction():
-    """Quick test to verify Gemini key works."""
-    test_msg = """
-    Hello, I want to book a Deluxe room for 2 adults and 1 child.
-    Name: Ana Costa, email: ana.costa@gmail.com
-    Arriving March 20, leaving March 25, 2025.
-    Can we get a sea view if possible?
-    """
-
-    print("Testing Gemini extraction...")
-    result = extract_booking_details(test_msg)
-    print(json.dumps(result, indent=2))
-
-
-if __name__ == '__main__':
-    test_extraction()
