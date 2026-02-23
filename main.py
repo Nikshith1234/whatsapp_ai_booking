@@ -1,11 +1,14 @@
 """
 Room Booking AI Agent — main.py
-Denisson's Beach Resort | booking.heykoala.ai
+Denisson's Beach Resort
 """
 
 import os
 import json
 import logging
+import threading
+import time
+import requests as req
 from dotenv import load_dotenv
 from flask import Flask, request, Response
 from twilio.rest import Client
@@ -27,21 +30,52 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ── Twilio Client ──────────────────────────────────
+# ── Twilio ─────────────────────────────────────────
 twilio_client = Client(
     os.getenv("TWILIO_ACCOUNT_SID"),
     os.getenv("TWILIO_AUTH_TOKEN")
 )
 TWILIO_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
 
-# ── Flask App ──────────────────────────────────────
+# ── Flask ──────────────────────────────────────────
 app = Flask(__name__)
+
+
+# ── Keep Alive (prevents Render free tier sleep) ───
+def keep_alive():
+    url = os.getenv("RENDER_URL", "")
+    if not url:
+        return
+    while True:
+        time.sleep(600)  # ping every 10 minutes
+        try:
+            req.get(f"{url}/", timeout=10)
+            log.info("Keep-alive ping sent")
+        except Exception as e:
+            log.warning(f"Keep-alive failed: {e}")
+
+def start_keep_alive():
+    thread = threading.Thread(target=keep_alive, daemon=True)
+    thread.start()
 
 
 # ── Health Check ───────────────────────────────────
 @app.route('/', methods=['GET'])
 def health():
     return {"status": "running"}, 200
+
+
+# ── Gemini Test ────────────────────────────────────
+@app.route('/test-gemini', methods=['GET'])
+def test_gemini():
+    try:
+        result = extract_booking_details(
+            "Book a Deluxe Room for John Silva, john@gmail.com, "
+            "check-in March 10 2026, check-out March 15 2026, 2 adults"
+        )
+        return {"status": "success", "extracted": result}, 200
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
 
 
 # ── WhatsApp Webhook ───────────────────────────────
@@ -52,13 +86,8 @@ def whatsapp_webhook():
 
     log.info(f"Message from {sender}: {incoming_msg}")
 
-    # Send instant acknowledgement
     send_whatsapp(sender, "Processing your booking request, please wait...")
-
-    # Process and get reply
     reply = process_booking_request(incoming_msg)
-
-    # Send final reply
     send_whatsapp(sender, reply)
 
     return Response("<Response></Response>", mimetype='text/xml')
@@ -66,8 +95,6 @@ def whatsapp_webhook():
 
 # ── Core Booking Logic ─────────────────────────────
 def process_booking_request(message: str) -> str:
-
-    # Step 1: Extract with Gemini
     try:
         details = extract_booking_details(message)
         log.info(f"Extracted: {json.dumps(details, indent=2)}")
@@ -82,7 +109,6 @@ def process_booking_request(message: str) -> str:
             "Check-in March 10 2026, check-out March 15 2026. 2 adults."
         )
 
-    # Step 2: Check required fields
     required = {
         "guest_name": "your full name",
         "email":      "your email address",
@@ -101,11 +127,9 @@ def process_booking_request(message: str) -> str:
             f"Please resend with all details. Thank you!"
         )
 
-    # Step 3: Create booking
     try:
         result = create_booking(details)
         log.info(f"Booking success: {result}")
-
         return (
             f"Booking Confirmed!\n\n"
             f"Denisson's Beach Resort\n"
@@ -120,7 +144,6 @@ def process_booking_request(message: str) -> str:
             f"Confirmation sent to {details['email']}.\n\n"
             f"We look forward to welcoming you!"
         )
-
     except Exception as e:
         log.error(f"Booking API failed: {e}")
         return (
@@ -147,20 +170,7 @@ def send_whatsapp(to: str, message: str):
 
 # ── Run ────────────────────────────────────────────
 if __name__ == '__main__':
+    start_keep_alive()
     port = int(os.environ.get("PORT", 5000))
     log.info(f"Starting server on port {port}...")
     app.run(host="0.0.0.0", port=port, debug=False)
-
-
-# ── Gemini Test Endpoint ───────────────────────────
-@app.route('/test-gemini', methods=['GET'])
-def test_gemini():
-    try:
-        from ai_extractor import extract_booking_details
-        result = extract_booking_details(
-            "Book a Deluxe Room for John Silva, john@gmail.com, "
-            "check-in March 10 2026, check-out March 15 2026, 2 adults"
-        )
-        return {"status": "success", "extracted": result}, 200
-    except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
